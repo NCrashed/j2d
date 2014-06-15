@@ -1,0 +1,9 @@
+{
+	"name": "j2d",
+	"description": "Experimental convertor from Java to D",
+	"copyright": "Copyright © 2014, Anton Gushcha",
+	"authors": ["Anton Gushcha - NCrashed <ncrashed@gmail.com>"],
+	"dependencies": {
+		"pegged": "~master"
+	}
+}
