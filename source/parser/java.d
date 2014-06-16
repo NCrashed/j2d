@@ -13,6 +13,15 @@ import pegged.tester.grammartester;
 
 mixin(grammar(`
 Java:
+    # Spacing and Comments
+    #============================================================
+
+    Spacing <- :(' ' / '\t' / '\r' / '\n' / '\r\n' / Comment)*
+    Comment <- BlockComment
+             / LineComment
+    
+    BlockComment <~ :'/*' (!'*/' .)* :'*/'
+    LineComment <~ :'//' (!endOfLine .)* :endOfLine
 
     # Identifiers
     #============================================================
@@ -32,15 +41,79 @@ Java:
     QualifiedIdentifier < Identifier ('.' Identifier)*
     QualifiedIdentifierList < QualifiedIdentifier (',' QualifiedIdentifier)*
 
-    # Spacing and Comments
+    # Literals
     #============================================================
+    Literal <- FloatingPointLiteral / IntegerLiteral / BooleanLiteral / CharacterLiteral / StringLiteral / NullLiteral
+    Underscores <~ '_'+
 
-    Spacing <- :(' ' / '\t' / '\r' / '\n' / '\r\n' / Comment)*
-    Comment <- BlockComment
-             / LineComment
+    # Integer literals
+
+    IntegerLiteral <- HexIntegerLiteral / OctalIntegerLiteral / BinaryIntegerLiteral / DecimalIntegerLiteral
+    DecimalIntegerLiteral <- DecimalNumeral IntegerTypeSuffix?
+    HexIntegerLiteral <- HexNumeral IntegerTypeSuffix?
+    OctalIntegerLiteral <- OctalNumeral IntegerTypeSuffix?
+    BinaryIntegerLiteral <- BinaryNumeral IntegerTypeSuffix?
+    IntegerTypeSuffix <- 'l' / 'L'
+
+    DecimalNumeral <~ '0' / (NonZeroDigit Digits?) / (NonZeroDigit Underscores Digits)
+    Digits <~ digit (digit / '_')*
+    NonZeroDigit <- [1-9]
+
+    HexNumeral <~ ("0x" / "0X") HexDigits
+    HexDigits <~ HexDigit (HexDigit / '_')*
+    HexDigit <~ [0-9a-fA-F]
+
+    OctalNumeral <~ '0' OctalDigits / '0' Underscores OctalDigits
+    OctalDigits <~ OctalDigit (OctalDigit / '_')*
+    OctalDigit <~ [0-7]
+
+    BinaryNumeral <~ ("0b"/ "0B") BinaryDigits
+    BinaryDigits <~ BinaryDigit (BinaryDigit / '_')*
+    BinaryDigit <~ [01]
+
+    # Floating point literals
+    FloatingPointLiteral < DecimalFloatingPointLiteral / HexadecimalFloatingPointLiteral
     
-    BlockComment <~ :'/*' (!'*/' .)* :'*/'
-    LineComment <~ :'//' (!endOfLine .)* :endOfLine
+    DecimalFloatingPointLiteral <~ 
+        Digits '.' Digits? ExponentPart? FloatTypeSuffix? /
+        '.' Digits ExponentPart? FloatTypeSuffix? /
+        Digits ExponentPart FloatTypeSuffix? /
+        Digits ExponentPart? FloatTypeSuffix
+    
+    ExponentPart <~ ExponentIndicator SignedInteger
+    ExponentIndicator <~ [eE]
+    
+    SignedInteger <~ Sign? Digits
+    Sign <~ '+' / '-'
+    
+    FloatTypeSuffix <~ [fFdD]
+    
+    HexadecimalFloatingPointLiteral <~ HexSignificand BinaryExponent FloatTypeSuffix?
+    HexSignificand <~ HexNumeral '.'? / ("0x" / "0X") HexDigits? '.' HexDigits
+    
+    BinaryExponent <~ BinaryExponentIndicator SignedInteger
+    BinaryExponentIndicator <~ [pP]
+
+    # Boolean literal
+    BooleanLiteral <~ "true" / "false"
+    
+    # Character literal
+    CharacterLiteral <~ quote (!quote (EscapeSequence / .)) quote
+    
+    # String literal
+    StringLiteral <~ doublequote (JChar)* doublequote
+    JChar <- EscapeSequence / !doublequote .
+    EscapeSequence <- backslash ( quote
+                                / doublequote
+                                / backslash
+                                / [bfnrtv]
+                                / 'u'+ HexDigit HexDigit HexDigit HexDigit
+                                / OctalEscape
+                                )
+    OctalEscape <~ [0-3] OctalDigit OctalDigit / OctalDigit OctalDigit / OctalDigit 
+
+    # Null literal
+    NullLiteral <~ "null"
 
     # Compilation Unit
     #============================================================
@@ -152,4 +225,77 @@ unittest
         Test(q{@StartObject}, `Annotation -> QualifiedIdentifier -> Identifier`, true),
         Test(q{@StartObject()}, `Annotation -> QualifiedIdentifier -> Identifier`, true),
     ].runTests!"Annotation";
+    
+    // lets test literals
+    [
+        // integer
+        Test(`0`, `Literal -> IntegerLiteral -> DecimalIntegerLiteral -> DecimalNumeral`, true),
+        Test(`0x7fff_ffff`, `Literal -> IntegerLiteral -> HexIntegerLiteral -> HexNumeral`, true),
+        Test(`0177_7777_7777`, `Literal -> IntegerLiteral -> OctalIntegerLiteral -> OctalNumeral`, true),
+        Test(`0b0111_1111_1111_1111_1111_1111_1111_1111`, `Literal -> IntegerLiteral -> BinaryIntegerLiteral -> BinaryNumeral`, true),
+        
+        Test(`0x8000_0000`, `Literal -> IntegerLiteral -> HexIntegerLiteral -> HexNumeral`, true),
+        Test(`0200_0000_0000`, `Literal -> IntegerLiteral -> OctalIntegerLiteral -> OctalNumeral`, true),
+        Test(`0b1000_0000_0000_0000_0000_0000_0000_0000`, `Literal -> IntegerLiteral -> BinaryIntegerLiteral -> BinaryNumeral`, true),
+        
+        Test(`0xffff_ffff`, `Literal -> IntegerLiteral -> HexIntegerLiteral -> HexNumeral`, true),
+        Test(`0377_7777_7777`, `Literal -> IntegerLiteral -> OctalIntegerLiteral -> OctalNumeral`, true),
+        Test(`0b1111_1111_1111_1111_1111_1111_1111_1111`, `Literal -> IntegerLiteral -> BinaryIntegerLiteral -> BinaryNumeral`, true),
+        
+        Test(`9223372036854775808L`, `Literal -> IntegerLiteral -> DecimalIntegerLiteral -> { DecimalNumeral IntegerTypeSuffix }`, true),
+        Test(`0l`, `Literal -> IntegerLiteral -> DecimalIntegerLiteral -> { DecimalNumeral IntegerTypeSuffix }`, true),
+        Test(`0b111`, `Literal -> IntegerLiteral -> BinaryIntegerLiteral -> BinaryNumeral`, true),
+        Test(`0b111l`, `Literal -> IntegerLiteral -> BinaryIntegerLiteral -> { BinaryNumeral IntegerTypeSuffix }`, true),
+        Test(`123`, `Literal -> IntegerLiteral -> DecimalIntegerLiteral -> DecimalNumeral`, true),
+        Test(`0123`, `Literal -> IntegerLiteral -> OctalIntegerLiteral -> OctalNumeral`, true),
+        Test(`0123L`, `Literal -> IntegerLiteral -> OctalIntegerLiteral -> { OctalNumeral IntegerTypeSuffix }`, true),
+        Test(`0X123`, `Literal -> IntegerLiteral -> HexIntegerLiteral -> HexNumeral`, true),
+        Test(`0X123l`, `Literal -> IntegerLiteral -> HexIntegerLiteral -> { HexNumeral IntegerTypeSuffix }`, true),
+        
+        // floating point
+        Test(`1e1f`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`2.f`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`.3f`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`0f`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`3.14f`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`6.022137e+23f`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        
+        Test(`1e1`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`2.`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`.3`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`0.0`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`3.14`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`1e-9d`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`1e137`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        
+        Test(`3.4028235e38f`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`1.40e-45f`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`1.7976931348623157e308`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        Test(`4.9e-324`, `Literal -> FloatingPointLiteral -> DecimalFloatingPointLiteral`, true),
+        
+        // boolean
+        Test(`true`, `Literal -> BooleanLiteral`, true),
+        Test(`false`, `Literal -> BooleanLiteral`, true),
+        
+        // character
+        Test(q{'a'}, `Literal -> CharacterLiteral`, true),
+        Test(q{'%'}, `Literal -> CharacterLiteral`, true),
+        Test(q{'\t'}, `Literal -> CharacterLiteral`, true),
+        Test(q{'\\'}, `Literal -> CharacterLiteral`, true),
+        Test(q{'\''}, `Literal -> CharacterLiteral`, true),
+        Test(q{'\u03a9'}, `Literal -> CharacterLiteral`, true),
+        Test(`'\uFFFF'`, `Literal -> CharacterLiteral`, true),
+        Test(q{'\177'}, `Literal -> CharacterLiteral`, true),
+        // Test(q{'Я'}, `Literal -> CharacterLiteral`, true),
+        // Test(q{'Ω'}, `Literal -> CharacterLiteral`, true), uncomment when pegged starts supporting dstrings
+        
+        // string
+        Test(q{""}, `Literal -> StringLiteral`, true),
+        Test(q{"Hello"}, `Literal -> StringLiteral`, true),
+        Test(q{"\t\n"}, `Literal -> StringLiteral`, true),
+        Test(q{"Привет"}, `Literal -> StringLiteral`, true),
+        
+        // null
+        Test("null", `Literal -> NullLiteral`, true),
+    ].runTests!"Literal";
 }
