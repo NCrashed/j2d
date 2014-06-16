@@ -25,6 +25,8 @@ Java:
         "char"     / "final"    / "interface"  / "static"    / "void"         / 
         "class"    / "finally"  / "long"       / "strictfp"  / "volatile"     / 
         "const"    / "float"    / "native"     / "super"     / "while"
+    QualifiedIdentifier < Identifier ('.' Identifier)*
+    QualifiedIdentifierList < QualifiedIdentifier (',' QualifiedIdentifier)*
 `));
 
 version(unittest)
@@ -33,7 +35,17 @@ version(unittest)
 }
 unittest
 {
-    auto javaTester = new GrammarTester!(Java, "Identifier");
-    javaTester.assertSimilar(`foo123`, `Identifier`);
-    javaTester.assertSimilar(`abstract`, `Identifier`).assertThrown!Error;
+    auto identifiers = new GrammarTester!(Java, "QualifiedIdentifier");
+    identifiers.assertSimilar(`foo123`, `QualifiedIdentifier -> Identifier`);
+    identifiers.assertSimilar(`1foo123`, `QualifiedIdentifier -> Identifier`).assertThrown!Error;
+    identifiers.assertSimilar(`abstract`, `QualifiedIdentifier -> Identifier`).assertThrown!Error;
+    identifiers.assertSimilar(`foo123.ahola`, `QualifiedIdentifier -> { Identifier Identifier }`);
+    
+    auto identList = new GrammarTester!(Java, "QualifiedIdentifierList");
+    identList.assertSimilar(`foo123.ahola, foo.boo`, `
+        QualifiedIdentifierList -> 
+        {
+            QualifiedIdentifier -> { Identifier Identifier }
+            QualifiedIdentifier -> { Identifier Identifier }
+        }`);
 }
