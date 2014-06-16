@@ -27,25 +27,107 @@ Java:
         "const"    / "float"    / "native"     / "super"     / "while"
     QualifiedIdentifier < Identifier ('.' Identifier)*
     QualifiedIdentifierList < QualifiedIdentifier (',' QualifiedIdentifier)*
+
+    CompilationUnit < (Annotations? "package" QualifiedIdentifier ';')? ImportDeclaration* TypeDeclaration*
+    ImportDeclaration < "import" StaticImport? Identifier ('.' Identifier)* ImportAll? ';'
+    StaticImport <~ "static"
+    ImportAll <~ ".*"
+    TypeDeclaration < eps
+
+    Annotations < Annotation (Annotation)*
+    Annotation < '@' QualifiedIdentifier ('(' AnnotationElement* ')')?
+    AnnotationElement < ElementValuePairs / ElementValue
+    ElementValuePairs < ElementValuePair (',' ElementValuePair)*
+    ElementValuePair  < Identifier '=' ElementValue
+    ElementValue < Annotation / Expression1 / ElementValueArrayInitializer
+    ElementValueArrayInitializer < (ElementValues? ','?)*
+    ElementValues < ElementValue (',' ElementValue)*
+
+    Expression1 < eps
 `));
 
 version(unittest)
 {
+    import std.algorithm;
+    import std.functional;
     import std.exception;
+    import std.typecons;
+    import std.range;
+    import std.stdio;
+    import std.traits;
+    
+    alias Test = Tuple!(string, "tcase", string, "result", bool, "positive");
+    
+    void evaluate(R)(R range) if(isInputRange!R && isCallable!(ForeachType!R))
+    {
+        foreach(elem; range)
+        {
+            elem();
+        }
+    }
+    
+    auto test(T...)(GrammarTester!T tester, auto const ref Test test)
+    {
+        return 
+        {
+            if(test.positive)
+                tester.assertSimilar(test.tcase, test.result);
+            else
+                tester.assertSimilar(test.tcase, test.result).assertThrown!Error;
+        };
+    }
+    
+    void runTests(string startSymbol)(Test[] tests)
+    {
+        auto tester = new GrammarTester!(Java, startSymbol);
+        tests.map!(curry!(test, tester)).evaluate;
+    }
 }
 unittest
 {
-    auto identifiers = new GrammarTester!(Java, "QualifiedIdentifier");
-    identifiers.assertSimilar(`foo123`, `QualifiedIdentifier -> Identifier`);
-    identifiers.assertSimilar(`1foo123`, `QualifiedIdentifier -> Identifier`).assertThrown!Error;
-    identifiers.assertSimilar(`abstract`, `QualifiedIdentifier -> Identifier`).assertThrown!Error;
-    identifiers.assertSimilar(`foo123.ahola`, `QualifiedIdentifier -> { Identifier Identifier }`);
+    [
+        Test(`foo123`, `QualifiedIdentifier -> Identifier`, true),
+        Test(`1foo123`, `QualifiedIdentifier -> Identifier`, false),
+        Test(`abstract`, `QualifiedIdentifier -> Identifier`, false),
+        Test(`foo123.ahola`, `QualifiedIdentifier -> { Identifier Identifier }`, true),
+    ].runTests!"QualifiedIdentifier";
     
-    auto identList = new GrammarTester!(Java, "QualifiedIdentifierList");
-    identList.assertSimilar(`foo123.ahola, foo.boo`, `
+    [
+        Test(`foo123.ahola, foo.boo`, `
         QualifiedIdentifierList -> 
         {
             QualifiedIdentifier -> { Identifier Identifier }
             QualifiedIdentifier -> { Identifier Identifier }
-        }`);
+        }`
+        , true)
+    ].runTests!"QualifiedIdentifierList";
+    
+    [
+        Test(q{
+            package net.mypackage;
+            
+            import com.google.common.base.Stopwatch;
+            import com.google.common.collect.Queues;
+            import com.google.common.collect.Sets; 
+            
+            import static java.lang.Math.*;
+        },
+        `
+            CompilationUnit ->
+            {
+                QualifiedIdentifier -> { Identifier Identifier }
+                
+                ImportDeclaration -> {Identifier Identifier Identifier Identifier Identifier}
+                ImportDeclaration -> {Identifier Identifier Identifier Identifier Identifier}
+                ImportDeclaration -> {Identifier Identifier Identifier Identifier Identifier}
+    
+                ImportDeclaration -> {StaticImport Identifier Identifier Identifier ImportAll}
+            }
+        `, true)
+    ].runTests!"CompilationUnit";
+    
+    [
+        Test(q{@StartObject}, `Annotation -> QualifiedIdentifier -> Identifier`, true),
+        Test(q{@StartObject()}, `Annotation -> QualifiedIdentifier -> Identifier`, true),
+    ].runTests!"Annotation";
 }
