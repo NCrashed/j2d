@@ -13,6 +13,10 @@ import pegged.tester.grammartester;
 
 mixin(grammar(`
 Java:
+
+    # Identifiers
+    #============================================================
+
     Identifier <~ !Keyword [a-zA-Z_] [a-zA-Z0-9_]*
     Keyword <   
         "abstract" / "continue" / "for"        / "new"       / "switch"       / 
@@ -27,6 +31,19 @@ Java:
         "const"    / "float"    / "native"     / "super"     / "while"
     QualifiedIdentifier < Identifier ('.' Identifier)*
     QualifiedIdentifierList < QualifiedIdentifier (',' QualifiedIdentifier)*
+
+    # Spacing and Comments
+    #============================================================
+
+    Spacing <- :(' ' / '\t' / '\r' / '\n' / '\r\n' / Comment)*
+    Comment <- BlockComment
+             / LineComment
+    
+    BlockComment <~ :'/*' (!'*/' .)* :'*/'
+    LineComment <~ :'//' (!endOfLine .)* :endOfLine
+
+    # Compilation Unit
+    #============================================================
 
     CompilationUnit < (Annotations? "package" QualifiedIdentifier ';')? ImportDeclaration* TypeDeclaration*
     ImportDeclaration < "import" StaticImport? Identifier ('.' Identifier)* ImportAll? ';'
@@ -55,7 +72,7 @@ version(unittest)
     import std.range;
     import std.stdio;
     import std.traits;
-    
+
     alias Test = Tuple!(string, "tcase", string, "result", bool, "positive");
     
     void evaluate(R)(R range) if(isInputRange!R && isCallable!(ForeachType!R))
@@ -104,12 +121,17 @@ unittest
     
     [
         Test(q{
+            /**
+            *   My awesome package
+            */
             package net.mypackage;
             
+            // imports
             import com.google.common.base.Stopwatch;
             import com.google.common.collect.Queues;
             import com.google.common.collect.Sets; 
             
+            /* I like comments */
             import static java.lang.Math.*;
         },
         `
