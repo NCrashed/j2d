@@ -122,8 +122,9 @@ Java:
     ImportDeclaration < "import" StaticImport? Identifier ('.' Identifier)* ImportAll? ';'
     StaticImport <~ "static"
     ImportAll <~ ".*"
-    TypeDeclaration < eps
 
+    # Annotations
+    #============================================================
     Annotations < Annotation (Annotation)*
     Annotation < '@' QualifiedIdentifier ('(' AnnotationElement* ')')?
     AnnotationElement < ElementValuePairs / ElementValue
@@ -133,7 +134,95 @@ Java:
     ElementValueArrayInitializer < (ElementValues? ','?)*
     ElementValues < ElementValue (',' ElementValue)*
 
+    AnnotationTypeBody < eps
+    # Types
+    #============================================================
+    TypeDeclaration < ClassOrInterfaceDeclaration / ';'
+    ClassOrInterfaceDeclaration < Modifier* (ClassDeclaration / InterfaceDeclaration)
+
+    Type < BasicType ('[' ']')* / ReferenceType ('[' ']')*
+    BasicType <- "byte" / "short" / "char" / "int" / "long" / "float" / "double" / "boolean"
+    ReferenceType < Identifier TypeArguments? ('.' Identifier TypeArguments?)*
+    TypeArguments < '<' TypeArgument (',' TypeArgument)* '>'
+    TypeArgument < ReferenceType / '?' (("extends" / "super") ReferenceType)?
+
+    NonWildcardTypeArguments < '<' TypeList '>'
+    TypeList < ReferenceType (',' ReferenceType)*
+    
+    TypeArgumentsOrDiamond < '<' '>' / TypeArguments
+    NonWildcardTypeArgumentsOrDiamond < '<' '>' / NonWildcardTypeArguments
+
+    TypeParameters < '<' TypeParameter (',' TypeParameter)* '>'
+    TypeParameter < Identifier ("extends" Bound)?
+    Bound < ReferenceType ('&' ReferenceType)?
+
+    Modifier <- Annotation / "public" / "protected" / "private" / "static" / "abstract" 
+        / "final" / "native" / "synchronized" / "trasient" / "volatile" / "strictfp"
+    
+    # Classes
+    #============================================================
+    ClassDeclaration < NormalClassDeclaration / EnumDeclaration
+    NormalClassDeclaration < "class" Identifier TypeParameters? ExtendBody? ImplementBody? ClassBody
+    ExtendBody < "extends" Type
+    ImplementBody < "implements" TypeList
+    ClassBody < '{' ClassBodyDeclaration* '}'
+    ClassBodyDeclaration < ';' / Modifier* MemberDecl / "static"? Block
+
+    MemberDecl < 
+        / MethodOrFieldDecl
+        / "void" Identifier VoidMethodDeclaratorRest
+        / Identifier ConstructorDeclaratorRest
+        / GenericMethodOrConstructorDecl
+        / ClassDeclaration
+        / InterfaceDeclaration
+
+    MethodOrFieldDecl < Type Identifier MethodOrFieldRest
+    MethodOrFieldRest < FieldDeclaratorsRest ';' / MethodDeclaratorRest
+    FieldDeclaratorsRest < VariableDeclaratorRest (',' VariableDeclarator)*
+    MethodDeclaratorRest < FormalParameters ('[' ']')* ("throws" QualifiedIdentifierList)? (Block / ';')
+    VoidMethodDeclaratorRest < FormalParameters ("throws" QualifiedIdentifierList)? (Block / ';')
+    ConstructorDeclaratorRest < FormalParameters ("throws" QualifiedIdentifierList)? Block
+    
+    GenericMethodOrConstructorDecl < TypeParameters GenericMethodOrConstructorRest
+    GenericMethodOrConstructorRest < 
+        / (Type / "void") Identifier MethodDeclaratorRest
+        / Identifier ConstructorDeclaratorRest
+    
+    # Enums
+    #============================================================
+    EnumDeclaration < "enum" Identifier ("implements" TypeList)? EnumBody
+    EnumBody < eps
+
+    # Interfaces
+    #============================================================
+    InterfaceDeclaration < NormalInterfaceDeclaration / AnnotationTypeDeclaration
+    NormalInterfaceDeclaration < "interface" Identifier TypeParameters? ("extends" TypeList)? InterfaceBody
+    AnnotationTypeDeclaration < '@' "interface" Identifier AnnotationTypeBody
+    InterfaceBody < eps
+    
+    # Variables and parameters
+    #============================================================
+    FormalParameters < '(' FormalParameterDecls? ')'
+    FormalParameterDecls < VariableModifier* Type FormalParameterDeclsRest
+    VariableModifier <- "final" / Annotation
+    FormalParameterDeclsRest < VariableDeclaratorId (',' FormalParameterDecls)? / "..." VariableDeclaratorId
+    VariableDeclaratorId < Identifier ('[' ']')*
+
+    VariableDeclarators < VariableDeclarator (',' VariableDeclarator)*
+    VariableDeclarator < Identifier VariableDeclaratorRest
+    VariableDeclaratorRest < ('[' ']')* ('=' VariableInitializer)?
+
+    VariableInitializer <- Expression / ArrayInitializer
+    ArrayInitializer < ('[' VariableInitializer (',' VariableInitializer)* ','? ']')*
+
+    # Expression
+    #============================================================
     Expression1 < eps
+    Expression < eps
+
+    # Block
+    #============================================================
+    Block < eps
 `));
 
 version(unittest)
@@ -298,4 +387,161 @@ unittest
         // null
         Test("null", `Literal -> NullLiteral`, true),
     ].runTests!"Literal";
+    
+    // classes
+    [
+        Test(q{class A {}}, `
+            ClassDeclaration -> NormalClassDeclaration ->
+            {
+                Identifier
+                ClassBody
+            }
+        `,
+        true),
+        Test(q{class B <T> extends A implements C {}}, `
+            ClassDeclaration -> NormalClassDeclaration ->
+            {
+                Identifier
+                TypeParameters -> TypeParameter -> Identifier
+                ExtendBody -> Type -> ReferenceType -> Identifier
+                ImplementBody -> TypeList -> ReferenceType -> Identifier
+                ClassBody
+            }
+        `,
+        true),
+        Test(q{
+            class A {
+               String field1;
+            }
+        }, `
+            ClassDeclaration -> NormalClassDeclaration ->
+            {
+                Identifier
+                ClassBody -> ClassBodyDeclaration -> MemberDecl -> MethodOrFieldDecl ->
+                {
+                    Type -> ReferenceType -> Identifier
+                    Identifier
+                    MethodOrFieldRest
+                }
+            }
+        `,
+        true),
+        Test(q{
+            class A {
+               int foo(boolean param)
+            }
+        }, `
+            ClassDeclaration -> NormalClassDeclaration ->
+            {
+                Identifier
+                ClassBody -> ClassBodyDeclaration -> MemberDecl -> MethodOrFieldDecl ->
+                {
+                    Type -> BasicType
+                    Identifier
+                    MethodOrFieldRest -> MethodDeclaratorRest ->
+                    {
+                        FormalParameters -> FormalParameterDecls ->
+                        {
+                            Type -> BasicType
+                            FormalParameterDeclsRest -> VariableDeclaratorId -> Identifier
+                        }
+                        Block
+                    }
+                }
+            }
+        `,
+        true),
+        Test(q{
+            class A {
+               A(boolean param)
+            }
+        }, `
+            ClassDeclaration -> NormalClassDeclaration ->
+            {
+                Identifier
+                ClassBody -> ClassBodyDeclaration -> MemberDecl ->
+                {
+                    Identifier
+                    ConstructorDeclaratorRest ->
+                    {
+                        FormalParameters -> FormalParameterDecls ->
+                        {
+                            Type -> BasicType
+                            FormalParameterDeclsRest -> VariableDeclaratorId -> Identifier
+                        }
+                        Block
+                    }
+                }
+            }
+        `,
+        true),
+        Test(q{
+            class A {
+               <T> A(boolean param)
+            }
+        }, `
+            ClassDeclaration -> NormalClassDeclaration ->
+            {
+                Identifier
+                ClassBody -> ClassBodyDeclaration -> MemberDecl ->
+                {
+                    GenericMethodOrConstructorDecl -> 
+                    {
+                        TypeParameters -> TypeParameter -> Identifier
+                        GenericMethodOrConstructorRest ->
+                        {
+                            Identifier
+                            ConstructorDeclaratorRest ->
+                            {
+                                FormalParameters -> FormalParameterDecls ->
+                                {
+                                    Type -> BasicType
+                                    FormalParameterDeclsRest -> VariableDeclaratorId -> Identifier
+                                }
+                                Block
+                            }
+                        }
+                    }
+                }
+            }
+        `,
+        true),
+        Test(q{
+            class A {
+               <T extends C & I> int foo(boolean param)
+            }
+        }, `
+            ClassDeclaration -> NormalClassDeclaration ->
+            {
+                Identifier
+                ClassBody -> ClassBodyDeclaration -> MemberDecl -> GenericMethodOrConstructorDecl ->
+                {
+                    TypeParameters -> TypeParameter ->
+                    {
+                        Identifier
+                        Bound ->
+                        {
+                             ReferenceType -> Identifier
+                             ReferenceType -> Identifier
+                        }
+                    }
+                    GenericMethodOrConstructorRest -> 
+                    {
+                        Type -> BasicType
+                        Identifier
+                        MethodDeclaratorRest->
+                        {
+                            FormalParameters -> FormalParameterDecls ->
+                            {
+                                Type -> BasicType
+                                FormalParameterDeclsRest -> VariableDeclaratorId -> Identifier
+                            }
+                            Block
+                        }
+                    }
+                }
+            }
+        `,
+        true),
+    ].runTests!"ClassDeclaration";
 }
