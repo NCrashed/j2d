@@ -140,7 +140,8 @@ Java:
     TypeDeclaration < ClassOrInterfaceDeclaration / ';'
     ClassOrInterfaceDeclaration < Modifier* (ClassDeclaration / InterfaceDeclaration)
 
-    Type < BasicType ('[' ']')* / ReferenceType ('[' ']')*
+    Type < BasicType SquareParens* / ReferenceType SquareParens*
+    SquareParens < '[' ']'
     BasicType <- "byte" / "short" / "char" / "int" / "long" / "float" / "double" / "boolean"
     ReferenceType < Identifier TypeArguments? ('.' Identifier TypeArguments?)*
     TypeArguments < '<' TypeArgument (',' TypeArgument)* '>'
@@ -179,7 +180,7 @@ Java:
     MethodOrFieldDecl < Type Identifier MethodOrFieldRest
     MethodOrFieldRest < FieldDeclaratorsRest ';' / MethodDeclaratorRest
     FieldDeclaratorsRest < VariableDeclaratorRest (',' VariableDeclarator)*
-    MethodDeclaratorRest < FormalParameters ('[' ']')* ("throws" QualifiedIdentifierList)? (Block / ';')
+    MethodDeclaratorRest < FormalParameters SquareParens* ("throws" QualifiedIdentifierList)? (Block / ';')
     VoidMethodDeclaratorRest < FormalParameters ("throws" QualifiedIdentifierList)? (Block / ';')
     ConstructorDeclaratorRest < FormalParameters ("throws" QualifiedIdentifierList)? Block
     
@@ -198,19 +199,38 @@ Java:
     InterfaceDeclaration < NormalInterfaceDeclaration / AnnotationTypeDeclaration
     NormalInterfaceDeclaration < "interface" Identifier TypeParameters? ("extends" TypeList)? InterfaceBody
     AnnotationTypeDeclaration < '@' "interface" Identifier AnnotationTypeBody
-    InterfaceBody < eps
     
+    InterfaceBody < '{' InterfaceBodyDeclaration* '}'
+    InterfaceBodyDeclaration < Modifier* InterfaceMemberDecl / ';'
+    
+    InterfaceMemberDecl < 
+        / InterfaceMethodOrFieldDecl
+        / "void" Identifier VoidInterfaceMethodDeclaratorRest
+        / InterfaceGenericMethodDecl
+        / ClassDeclaration
+        / InterfaceDeclaration
+    
+    InterfaceMethodOrFieldDecl < Type Identifier InterfaceMethodOrFieldRest
+    InterfaceMethodOrFieldRest < ConstantDeclaratorsRest ';' / InterfaceMethodDeclaratorRest
+    ConstantDeclaratorsRest < ConstantDeclaratorRest (',' ConstantDeclarator)*
+    ConstantDeclaratorRest < SquareParens* '=' VariableInitializer
+    ConstantDeclarator < Identifier ConstantDeclaratorRest
+    
+    InterfaceMethodDeclaratorRest < FormalParameters SquareParens* ("throws" QualifiedIdentifierList)? ';'
+    VoidInterfaceMethodDeclaratorRest < FormalParameters ("throws" QualifiedIdentifierList)? ';'
+    InterfaceGenericMethodDecl < TypeParameters (Type / "void") Identifier InterfaceMethodDeclaratorRest
+
     # Variables and parameters
     #============================================================
     FormalParameters < '(' FormalParameterDecls? ')'
     FormalParameterDecls < VariableModifier* Type FormalParameterDeclsRest
     VariableModifier <- "final" / Annotation
     FormalParameterDeclsRest < VariableDeclaratorId (',' FormalParameterDecls)? / "..." VariableDeclaratorId
-    VariableDeclaratorId < Identifier ('[' ']')*
+    VariableDeclaratorId < Identifier SquareParens*
 
     VariableDeclarators < VariableDeclarator (',' VariableDeclarator)*
     VariableDeclarator < Identifier VariableDeclaratorRest
-    VariableDeclaratorRest < ('[' ']')* ('=' VariableInitializer)?
+    VariableDeclaratorRest < SquareParens* ('=' VariableInitializer)?
 
     VariableInitializer <- Expression / ArrayInitializer
     ArrayInitializer < ('[' VariableInitializer (',' VariableInitializer)* ','? ']')*
@@ -544,4 +564,100 @@ unittest
         `,
         true),
     ].runTests!"ClassDeclaration";
+    
+    // interfaces
+    [
+        Test(q{interface A {}}, `
+            InterfaceDeclaration -> NormalInterfaceDeclaration ->
+            {
+                Identifier
+                InterfaceBody
+            }
+        `,
+        true),
+        Test(q{interface B <T> extends A {}}, `
+            InterfaceDeclaration -> NormalInterfaceDeclaration ->
+            {
+                Identifier
+                TypeParameters -> TypeParameter -> Identifier
+                TypeList -> ReferenceType -> Identifier
+                InterfaceBody
+            }
+        `,
+        true),
+        Test(q{
+            interface A {
+               String field1 = ;
+            }
+        }, `
+            InterfaceDeclaration -> NormalInterfaceDeclaration ->
+            {
+                Identifier
+                InterfaceBody -> InterfaceBodyDeclaration -> InterfaceMemberDecl -> InterfaceMethodOrFieldDecl ->
+                {
+                    Type -> ReferenceType -> Identifier
+                    Identifier
+                    InterfaceMethodOrFieldRest -> ConstantDeclaratorsRest -> ConstantDeclaratorRest -> VariableInitializer -> Expression
+                }
+            }
+        `,
+        true),
+        Test(q{
+            interface A {
+               int foo(boolean param);
+            }
+        }, `
+            InterfaceDeclaration -> NormalInterfaceDeclaration ->
+            {
+                Identifier
+                InterfaceBody -> InterfaceBodyDeclaration -> InterfaceMemberDecl -> InterfaceMethodOrFieldDecl ->
+                {
+                    Type -> BasicType
+                    Identifier
+                    InterfaceMethodOrFieldRest -> InterfaceMethodDeclaratorRest ->
+                    {
+                        FormalParameters -> FormalParameterDecls ->
+                        {
+                            Type -> BasicType
+                            FormalParameterDeclsRest -> VariableDeclaratorId -> Identifier
+                        }
+                    }
+                }
+            }
+        `,
+        true),
+        Test(q{
+            interface A {
+               <T extends C & I> int foo(boolean param);
+            }
+        }, `
+            InterfaceDeclaration -> NormalInterfaceDeclaration ->
+            {
+                Identifier
+                InterfaceBody -> InterfaceBodyDeclaration -> InterfaceMemberDecl -> InterfaceGenericMethodDecl ->
+                {
+                    TypeParameters -> TypeParameter ->
+                    {
+                        Identifier
+                        Bound ->
+                        {
+                             ReferenceType -> Identifier
+                             ReferenceType -> Identifier
+                        }
+                    }
+                    Type -> BasicType
+                    Identifier
+                    InterfaceMethodDeclaratorRest->
+                    {
+                        FormalParameters -> FormalParameterDecls ->
+                        {
+                            Type -> BasicType
+                            FormalParameterDeclsRest -> VariableDeclaratorId -> Identifier
+                        }
+                    }
+                }
+            }
+        `,
+        true),
+    ].runTests!"InterfaceDeclaration";
 }
