@@ -218,7 +218,12 @@ Java:
     # Enums
     #============================================================
     EnumDeclaration < "enum" Identifier ("implements" TypeList)? EnumBody
-    EnumBody < eps
+    EnumBody < '{' EnumConstants? ','? EnumBodyDeclarations? '}'
+
+    EnumConstants < EnumConstant (',' EnumConstant)*
+    EnumConstant < Annotations? Identifier Arguments? ClassBody?
+
+    EnumBodyDeclarations < ';' ClassBodyDeclaration*
 
     # Interfaces
     #============================================================
@@ -265,6 +270,8 @@ Java:
     #============================================================
     Expression1 < eps
     Expression < eps
+
+    Arguments < '(' ( Expression ( ',' Expression )* )? ')'
 
     # Block
     #============================================================
@@ -734,4 +741,138 @@ unittest
         `,
         true),
     ].runTests!"CompilationUnit";
+    
+    // enum declaration
+    [
+        Test(q{
+            enum Season { WINTER, SPRING, SUMMER, AUTUMN }
+        }, `
+            EnumDeclaration ->
+            {
+                Identifier
+                EnumBody -> EnumConstants ->
+                {
+                    EnumConstant -> Identifier
+                    EnumConstant -> Identifier
+                    EnumConstant -> Identifier
+                    EnumConstant -> Identifier
+                }
+            }
+        `,
+        true),
+        Test(q{
+            enum Direction implements IDirection
+            { 
+               UP, DOWN; 
+             
+               public Direction opposite() /*{ return this == UP ? DOWN : UP; }*/ 
+            } 
+        }, `
+            EnumDeclaration ->
+            {
+                Identifier
+                TypeList -> ReferenceType -> Identifier
+                EnumBody -> 
+                {
+                    EnumConstants ->
+                    {
+                        EnumConstant -> Identifier
+                        EnumConstant -> Identifier
+                    }
+                    EnumBodyDeclarations -> ClassBodyDeclaration ->
+                    {
+                        Modifier
+                        MemberDecl -> MethodOrFieldDecl ->
+                        {
+                            Type -> ReferenceType -> Identifier
+                            Identifier
+                            MethodOrFieldRest -> MethodDeclaratorRest ->
+                            {
+                                FormalParameters
+                                Block
+                            }
+                        }
+                    }
+                }
+            }
+        `,
+        true),
+        Test(q{
+            enum Direction implements IDirection
+            { 
+               UP { 
+                    public Direction opposite() /*{ return DOWN; }*/ 
+               }, 
+               DOWN { 
+                    public Direction opposite() /*{ return UP; }*/
+               }; 
+             
+               public abstract Direction opposite()/*;*/
+            } 
+        }, `
+            EnumDeclaration ->
+            {
+                Identifier
+                TypeList -> ReferenceType -> Identifier
+                EnumBody -> 
+                {
+                    EnumConstants ->
+                    {
+                        EnumConstant -> 
+                        {
+                            Identifier
+                            ClassBody -> ClassBodyDeclaration ->
+                            {
+                                Modifier
+                                MemberDecl -> MethodOrFieldDecl ->
+                                {
+                                    Type -> ReferenceType -> Identifier
+                                    Identifier
+                                    MethodOrFieldRest -> MethodDeclaratorRest ->
+                                    {
+                                        FormalParameters
+                                        Block
+                                    }
+                                }
+                            }
+                        }
+                        EnumConstant -> 
+                        {
+                            Identifier
+                            ClassBody -> ClassBodyDeclaration ->
+                            {
+                                Modifier
+                                MemberDecl -> MethodOrFieldDecl ->
+                                {
+                                    Type -> ReferenceType -> Identifier
+                                    Identifier
+                                    MethodOrFieldRest -> MethodDeclaratorRest ->
+                                    {
+                                        FormalParameters
+                                        Block
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    EnumBodyDeclarations -> ClassBodyDeclaration ->
+                    {
+                        Modifier
+                        Modifier
+                        MemberDecl -> MethodOrFieldDecl ->
+                        {
+                            Type -> ReferenceType -> Identifier
+                            Identifier
+                            MethodOrFieldRest -> MethodDeclaratorRest ->
+                            {
+                                FormalParameters
+                                Block
+                            }
+                        }
+                    }
+                }
+            }
+        `,
+        true),
+    ].runTests!"EnumDeclaration";
 }
