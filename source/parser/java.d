@@ -134,7 +134,22 @@ Java:
     ElementValueArrayInitializer < (ElementValues? ','?)*
     ElementValues < ElementValue (',' ElementValue)*
 
-    AnnotationTypeBody < eps
+    AnnotationTypeBody < '{' AnnotationTypeElementDeclaration* '}'
+
+    AnnotationTypeElementDeclaration < Modifier* AnnotationTypeElementRest
+    AnnotationTypeElementRest < 
+        / Type Identifier AnnotationMethodOrConstantRest ';'
+        / ClassDeclaration
+        / InterfaceDeclaration
+        / EnumDeclaration
+        / AnnotationTypeDeclaration
+
+    AnnotationMethodOrConstantRest <
+        / AnnotationMethodRest
+        / ConstantDeclaratorsRest
+
+    AnnotationMethodRest < '(' ')' SquareParens? ("default" ElementValue)?
+
     # Types
     #============================================================
     TypeDeclaration < ClassOrInterfaceDeclaration / ';'
@@ -157,8 +172,19 @@ Java:
     TypeParameter < Identifier ("extends" Bound)?
     Bound < ReferenceType ('&' ReferenceType)?
 
-    Modifier <- Annotation / "public" / "protected" / "private" / "static" / "abstract" 
-        / "final" / "native" / "synchronized" / "trasient" / "volatile" / "strictfp"
+    Modifier <- 
+        / Annotation 
+        / "public" 
+        / "protected" 
+        / "private" 
+        / "static" 
+        / "abstract" 
+        / "final" 
+        / "native" 
+        / "synchronized" 
+        / "trasient" 
+        / "volatile" 
+        / "strictfp"
     
     # Classes
     #============================================================
@@ -660,4 +686,52 @@ unittest
         `,
         true),
     ].runTests!"InterfaceDeclaration";
+    
+    // annotation declaration
+    [
+        Test(q{
+            package test;
+             
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Retention;
+            import java.lang.annotation.RetentionPolicy;
+            import java.lang.annotation.Target;
+             
+            //@Retention(RetentionPolicy.RUNTIME)
+            //@Target(ElementType.METHOD) //can use in method only.
+            public @interface Test 
+            {
+                public boolean enabled() default /*true*/;                
+            }
+        }, `
+            CompilationUnit ->
+            {
+                QualifiedIdentifier -> Identifier
+                ImportDeclaration -> { Identifier Identifier Identifier Identifier }
+                ImportDeclaration -> { Identifier Identifier Identifier Identifier }
+                ImportDeclaration -> { Identifier Identifier Identifier Identifier }
+                ImportDeclaration -> { Identifier Identifier Identifier Identifier }
+
+                TypeDeclaration -> ClassOrInterfaceDeclaration -> 
+                {
+                    Modifier
+                    InterfaceDeclaration -> AnnotationTypeDeclaration -> 
+                    {
+                        Identifier
+                        AnnotationTypeBody -> AnnotationTypeElementDeclaration ->
+                        {
+                            Modifier
+                            AnnotationTypeElementRest -> 
+                            {
+                                Type -> BasicType
+                                Identifier
+                                AnnotationMethodOrConstantRest -> AnnotationMethodRest -> ElementValue -> Expression1
+                            }
+                        }
+                    }
+                }
+            }
+        `,
+        true),
+    ].runTests!"CompilationUnit";
 }
